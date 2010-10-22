@@ -1,0 +1,7 @@
+Erl_aliases is an Erlang syntax extension for shortening record and module
+names.
+
+This software is a work in progress and is not ready to be used yet.
+
+Check erl_aliases_tests.erl for some examples.
+
