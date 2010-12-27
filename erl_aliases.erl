@@ -31,6 +31,17 @@
 %       compile:file("t.erl", 'E').
 
 
+% uncomment this like to print some debug information
+%-define(DEBUG,1).
+
+-ifdef(DEBUG).
+-compile(export_all).
+-define(PRINT(Fmt, Args), io:format(Fmt, Args)).
+-else.
+-define(PRINT(Fmt, Args), ok).
+-endif.
+
+
 -define(LIST_MAPPER(M, F),
     M(L) -> lists:map(fun F/1, L)).
 
@@ -39,41 +50,89 @@ parse_transform(Forms, _Options) ->
     try
         lists:flatmap(fun rewrite/1, Forms)
     catch
-        {error, Es} -> exit(Es);
+        %{error, Es} -> exit(Es);
         {error, Es, Line} ->
             File = get_file(),
             Error = {File,[{Line,compile,{parse_transform,?MODULE,Es}}]},
             {error, [Error], []};
-        error ->
-            io:format("non-trasformed expr: ~p~n", [erlang:get_stacktrace()])
+        {missing_rule, Term} ->
+            Es = lists:flatten(io_lib:format(
+                "missing transformation rule for: ~w, "
+                "stack ~w", [Term, erlang:get_stacktrace()])),
+            exit(Es)
     end.
 
 
 set_file(File) ->
-    put('__ra_file__', File).
+    put('__erl_aliases_file__', File).
 
 get_file() ->
-    get('__ra_file__').
+    get('__erl_aliases_file__').
 
 
-add_alias(RecordName, Alias) ->
-    put(Alias, RecordName).
+add_record_alias(Name, Alias, Line) ->
+    add_alias('__erl_aliases_records__', Name, Alias, Line).
+
+unalias_record(Name) ->
+    unalias('__erl_aliases_records__', Name).
 
 
-unalias(X) ->
-    case get(X) of
-        'undefined' -> X;
-        Name -> unalias(Name)
+add_module_alias(Name, Alias, Line) ->
+    add_alias('__erl_aliases_modules__', Name, Alias, Line).
+
+unalias_module(Name) ->
+    unalias('__erl_aliases_modules__', Name).
+
+
+unalias_module_atom({'atom', LINE, Name}) ->
+    Name1 = unalias_module(Name),
+    {'atom', LINE, Name1};
+unalias_module_atom(X) -> X.
+
+
+add_alias(DictName, Name, Alias, Line) ->
+    ?PRINT("add ~w: ~w for ~w~n", [DictName, Alias, Name]),
+    Dict =
+        case get(DictName) of
+            'undefined' ->
+                % there are no prior dictionary and aliases; create an empty one
+                dict:new();
+            X -> X
+        end,
+    case dict:is_key(Alias, Dict) of
+        true ->
+            Es = lists:concat(["duplicate alias: ", Alias]),
+            throw({error, Es, Line});
+        false ->
+            NewDict = dict:store(Alias, Name, Dict),
+            put(DictName, NewDict),
+            ok
+    end.
+
+
+unalias(DictName, X) ->
+    case get(DictName) of
+        'undefined' -> X;  % there is no dictionary and aliases
+        Dict -> unalias_1(DictName, Dict, X)
+    end.
+
+
+unalias_1(_DictName, Dict, X) ->
+    case dict:find(X, Dict) of
+        'error' -> X; % no alias; return the original name
+        {ok, Name} ->
+            ?PRINT("unalias ~w: ~w to ~w~n", [_DictName, X, Name]),
+            % resolved name can also be an alias
+            unalias_1(_DictName, Dict, Name)
     end.
 
 
 rewrite(X = {attribute,_LINE,file,{File,_Line}}) ->
     set_file(File), [X];
 
-rewrite(X = {attribute,_LINE,record_alias,{Alias, RecordName}})
+rewrite({attribute,LINE,record_alias,{Alias, RecordName}})
         when is_atom(RecordName), is_atom(Alias) ->
-    io:format("record alias: ~w~n", [X]),
-    add_alias(RecordName, Alias),
+    add_record_alias(RecordName, Alias, LINE),
     [];
 
 rewrite({attribute,LINE,record_alias,X}) ->
@@ -81,6 +140,15 @@ rewrite({attribute,LINE,record_alias,X}) ->
     %      "invalid 'record_alias' specification ~w at line ~w", [X, LINE])),
     %throw({error, Es});
     Es = ["invalid 'record_alias' specification", X],
+    throw({error, Es, LINE});
+
+rewrite({attribute,LINE,module_alias,{Alias, ModuleName}})
+        when is_atom(ModuleName), is_atom(Alias) ->
+    add_module_alias(ModuleName, Alias, LINE),
+    [];
+
+rewrite({attribute,LINE,module_alias,X}) ->
+    Es = ["invalid 'module_alias' specification", X],
     throw({error, Es, LINE});
 
 rewrite({function,LINE,Name,Arity,L}) ->
@@ -92,24 +160,29 @@ rewrite(X) -> [X].
 
 ?LIST_MAPPER(clause_list, clause).
 
-clause({clause,LINE,Ps,Gs,B}) ->
-    {clause,LINE, expr_list(Ps), expr_list_list(Gs), expr_list(B)}.
+clause(_C = {clause,LINE,Ps,Gs,B}) ->
+    %?PRINT("clause: ~p~n", [_C]),
+    {clause,LINE, expr_list(Ps), expr_list_list(Gs), body(B)}.
 
 
 ?LIST_MAPPER(expr_list, expr).
 ?LIST_MAPPER(expr_list_list, expr_list).
 
+
+body(X) -> expr_list(X).
+
+
 expr({record,LINE,Name,L}) ->
-    {record,LINE,unalias(Name),field_list(L)};
+    {record,LINE,unalias_record(Name),field_list(L)};
 
 expr({record,LINE,E,Name,L}) ->
-    {record,LINE,E,unalias(Name),field_list(L)};
+    {record,LINE,E,unalias_record(Name),field_list(L)};
 
 expr({record_index,LINE,Name,F}) ->
-    {record_index,LINE,unalias(Name),F};
+    {record_index,LINE,unalias_record(Name),F};
 
 expr({record_field,LINE,E,Name,F}) ->
-    {record_field,LINE,E,unalias(Name),F};
+    {record_field,LINE,E,unalias_record(Name),F};
 
 expr({match,LINE,P_1,P_2}) ->
     {match,LINE,expr(P_1),expr(P_2)};
@@ -133,63 +206,79 @@ expr({'catch',LINE,E}) ->
     {'catch',LINE,expr(E)};
 
 expr({call, LINE, {remote,LINE_1,M,F}, L}) ->
-    {call, LINE, {remote,LINE_1,expr(M),expr(F)}, expr_list(L)};
+    M1 = unalias_module_atom(M),
+    {call, LINE, {remote,LINE_1,expr(M1),expr(F)}, expr_list(L)};
 
 expr({call,LINE,F,L}) ->
     {call,LINE,expr(F),expr_list(L)};
 
 % list comprehension
 expr({lc,LINE,E,L}) ->
-    expr({lc,LINE,expr(E),L});
+    {lc,LINE,expr(E),gen_list(L)};
 
 % binary comprehension
 expr({bc,LINE,E,L}) ->
-    expr({bc,LINE,expr(E),L});
-
-% begin .. end
-expr({block,LINE,B}) ->
-    {block,LINE,expr_list(B)};
-
-expr({'if',LINE,L}) ->
-    {'if',LINE,expr_list(L)};
-
-expr({'case',LINE,E_0,L}) ->
-    {'case',LINE,expr(E_0),clause_list(L)};
-
-expr({'try',LINE,B,Clauses,CatchClauses,After}) ->
-    {'try',LINE,expr(B),clause_list(Clauses),clause_list(CatchClauses),expr(After)};
-
-expr({'receive',LINE,L,E_0,B_t}) ->
-    {'receive',LINE,expr_list(L),expr(E_0),expr(B_t)};
-
-% TODO:
-% {'fun',LINE,{function,Name,Arity}}
-% {'fun',LINE,{function,Module,Name,Arity}}
-expr({'fun',LINE,{clauses,L}}) ->
-    {'fun',LINE,{clauses,clause_list(L)}};
+    {bc,LINE,expr(E),gen_list(L)};
 
 % If E is query [E_0 || W_1, ..., W_k] end, where each W_i is a generator or a filter
 expr({'query',LINE,{lc,LINE,E_0,L}}) ->
     {'query',LINE,{lc,LINE,expr(E_0),gen_list(L)}};
 
+% begin .. end
+expr({block,LINE,B}) ->
+    {block,LINE,body(B)};
+
+expr({'if',LINE,L}) ->
+    {'if',LINE,clause_list(L)};
+
+expr({'case',LINE,E_0,L}) ->
+    {'case',LINE,expr(E_0),clause_list(L)};
+
+% try ... of ... catch ... after ... end
+expr(_X = {'try',LINE,B,Clauses,CatchClauses,After}) ->
+    %?PRINT("try: ~p~n", [_X]),
+    {'try',LINE,body(B),clause_list(Clauses),clause_list(CatchClauses),body(After)};
+
+% receive ... end
+expr({'receive',LINE,L,E_0,B_t}) ->
+    {'receive',LINE,clause_list(L),expr(E_0),body(B_t)};
+
+% receive ... after ... end
+expr({'receive',LINE,L}) ->
+    {'receive',LINE,clause_list(L)};
+
+expr(X = {'fun',_LINE,{function,_Name,_Arity}}) ->
+    X;
+expr({'fun',LINE,{function,Module,Name,Arity}}) ->
+    {'fun',LINE,{function,unalias_module(Module),Name,Arity}};
+
+expr({'fun',LINE,{clauses,L}}) ->
+    {'fun',LINE,{clauses,clause_list(L)}};
+
 % If E is E_0.Field, a Mnesia record access inside a query
 expr({record_field,LINE,E_0,Field}) ->
     {record_field,LINE,expr(E_0),Field};
 
-expr(Atomic = {A,_LINE,_L}) when A == 'integer'; A == 'float'; A == 'string'; A == 'atom' ->
+expr(Atomic = {A,_LINE,_Value})
+        when A == 'integer'; A == 'float'; A == 'string';
+             A == 'atom'; A == 'char' ->
     Atomic;
 
-expr(Var = {var,_LINE,_A}) -> % variable
+expr(Var = {var,_LINE,_A}) -> % variable or variable pattern
     Var;
 
-expr(_Cc = {Class,P,_X}) when is_atom(Class) -> % throw or other atom catch clause
-    io:format("catch clause: ~p~n", [_Cc]),
-    {Class,expr(P),_X};
+expr(X = {nil,_LINE}) -> X;
+
+% If C is a catch clause X : P when Gs -> B where X is an atomic literal or a
+% variable pattern, P is a pattern, Gs is a guard sequence and B is a body, then
+% Rep(C) = {clause,LINE,[Rep({X,P,_})],Rep(Gs),Rep(B)}.
+expr(_Cc = {Class,P,'_'}) ->
+    %?PRINT("catch clause: ~p~n", [_Cc]),
+    {expr(Class),expr(P),'_'};
 
 expr(X) ->
-    io:format("non-trasformed expr: ~p~n", [X]),
-    throw(error),
-    X.
+    throw({missing_rule, X}).
+    %X.
 
 
 ?LIST_MAPPER(field_list, field).
@@ -203,6 +292,12 @@ field({record_field,LINE,F,E}) ->
 bin({bin_element,LINE,P,Size,TSL}) ->
     {bin_element,LINE,expr(P),Size,TSL}.
 
+
+% When W is a generator or a filter (in the body of a list or binary comprehension), then:
+%
+%    * If W is a generator P <- E, where P is a pattern and E is an expression, then Rep(W) = {generate,LINE,Rep(P),Rep(E)}.
+%    * If W is a generator P <= E, where P is a pattern and E is an expression, then Rep(W) = {b_generate,LINE,Rep(P),Rep(E)}.
+%    * If W is a filter E, which is an expression, then Rep(W) = Rep(E).
 
 ?LIST_MAPPER(gen_list, gen).
 

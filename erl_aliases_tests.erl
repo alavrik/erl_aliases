@@ -28,8 +28,15 @@
 
 -record(long_record_name, {a, b}).
 
--record_alias({r, long_record_name}).
-%-module_alias({m, long_module_name}).
+
+-record_alias({rr, long_record_name}).
+-record_alias({r, rr}).
+
+-module_alias({long_module_name, erl_aliases_tests}).
+-module_alias({m, long_module_name}).
+
+
+-export([m_test_helper/0]).
 
 
 r_match(#r{a = 'undefined', b = 'undefined'}) -> ok;
@@ -55,13 +62,65 @@ r_test() ->
 
     T = {R#r.a, R1#r.b},
 
-    F = fun
-        (R2 = #r{}) when R2#r.a /= #r.a -> ok;
-        (#r{a = 1}) -> ok;
-        (_) -> T
+    if
+        R#r.a == 'undefined'; not R1#r.b == 'undefined' -> ok
     end,
 
-    F(R),
+    begin
+        F = fun
+            (R2 = #r{}) when R2#r.a /= #r.a -> ok;
+            (#r{a = 1}) -> ok;
+            (_) -> T
+        end,
+
+        F(R)
+    end,
+
+    try foo, ok of
+        ok -> ok1;
+        ok when ok == ok -> ok2
+    catch
+        x -> ok;
+        {e, E} when E#r.b /= 0 -> -E#r.a;
+        throw:{e, E1} -> E1#r{b = 0};
+        E -> E#r.a;
+        T:x -> ok
+    after
+        R#r.b
+    end,
+
+    catch R#r.a,
+
+    self() ! [],
+    receive
+        [] -> ok;
+        _ when R#r.b /= 1 -> R#r.a
+    end,
+
+    receive
+        [] -> ok;
+        _ when R#r.b /= 1 -> R#r.a
+    after
+        R1#r.a -> R#r.b
+    end,
+
+    [ X#r.a || X <- [R, R1], is_integer(X#r.a) ],
+
+    <<3:32>> = <<(R1#r.a + R1#r.b):32/integer>>,
+
+    % TODO: missing tests:
+    % binary comprehension
+    % query
 
     ok.
+
+
+m_test() ->
+    m:m_test_helper(),
+    F = fun m:m_test_helper/0,
+    F(),
+    ok.
+
+
+m_test_helper() -> ok.
 
