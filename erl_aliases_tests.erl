@@ -29,11 +29,9 @@
 -record(long_record_name, {a, b}).
 
 
--record_alias({rr, long_record_name}).
--record_alias({r, rr}).
+-record_alias({r, long_record_name}).
 
--module_alias({long_module_name, erl_aliases_tests}).
--module_alias({m, long_module_name}).
+-module_alias({m, erl_aliases_tests}).
 
 
 -export([m_test_helper/0]).

@@ -70,18 +70,68 @@ get_file() ->
     get('__erl_aliases_file__').
 
 
+% check wither a key is present in the dictionary
+is_key(Name, DictName) ->
+    case get(DictName) of
+        'undefined' -> false; % there is no such dictionary
+        Dict -> dict:is_key(Name, Dict)
+    end.
+
+% store a key-value pair in the dictionary; create an empty dictionary if it
+% hasn't been created before
+store(Name, Value, DictName) ->
+    Dict =
+        case get(DictName) of
+            'undefined' -> dict:new();
+            X -> X
+        end,
+    NewDict = dict:store(Name, Value, Dict),
+    put(DictName, NewDict),
+    ok.
+
+
+is_record_name(Name) ->
+    is_key(Name, '__erl_aliases_records__').
+
+add_record_name(Name, Line) ->
+    case is_record_alias_name(Name) of
+        true ->
+            Es = lists:concat([
+                "record ", Name,
+                " conflicts with a previously defined record alias"]),
+            throw({error, Es, Line});
+        false ->
+            % we don't need any value to be associated with a record name at the
+            % moment
+            % XXX: store the location?
+            DictName = '__erl_aliases_records__',
+            store(Name, _Value = 'undefined', DictName)
+    end.
+
+
 add_record_alias(Name, Alias, Line) ->
-    add_alias('__erl_aliases_records__', Name, Alias, Line).
+    case is_record_name(Alias) of
+        true ->
+            Es = lists:concat([
+                "record alias ", Alias,
+                " conflicts with a previously defined record"]),
+            throw({error, Es, Line});
+        false ->
+            add_alias('__erl_record_aliases__', Name, Alias, Line)
+    end.
+
+is_record_alias_name(Name) ->
+    is_key(Name, '__erl_record_aliases__').
 
 unalias_record(Name) ->
-    unalias('__erl_aliases_records__', Name).
+    unalias('__erl_record_aliases__', Name).
 
 
 add_module_alias(Name, Alias, Line) ->
-    add_alias('__erl_aliases_modules__', Name, Alias, Line).
+    add_alias('__erl_module_aliases__', Name, Alias, Line).
 
 unalias_module(Name) ->
-    unalias('__erl_aliases_modules__', Name).
+    unalias('__erl_module_aliases__', Name).
 
 
 unalias_module_atom({'atom', LINE, Name}) ->
@@ -90,51 +140,55 @@ unalias_module_atom({'atom', LINE, Name}) ->
 unalias_module_atom(X) -> X.
 
 
+% add record or module alias entry to the correspondent dictionary
+add_alias(_DictName, Name, Alias, Line) when Name == Alias ->
+    Es = lists:concat(["alias ", Alias, " is an alias of itself"]),
+    throw({error, Es, Line});
+
 add_alias(DictName, Name, Alias, Line) ->
     ?PRINT("add ~w: ~w for ~w~n", [DictName, Alias, Name]),
-    Dict =
-        case get(DictName) of
-            'undefined' ->
-                % there are no prior dictionary and aliases; create an empty one
-                dict:new();
-            X -> X
-        end,
-    case dict:is_key(Alias, Dict) of
+    case is_key(Alias, DictName) of
         true ->
-            Es = lists:concat(["duplicate alias: ", Alias]),
+            Es = lists:concat(["duplicate alias ", Alias]),
             throw({error, Es, Line});
         false ->
-            NewDict = dict:store(Alias, Name, Dict),
-            put(DictName, NewDict),
-            ok
+            case is_key(Name, DictName) of
+                true ->
+                    Es_1 = lists:concat([
+                        "alias definition for previously defined alias ", Name]),
+                    throw({error, Es_1, Line});
+                false ->
+                    store(Alias, Name, DictName)
+            end
     end.
 
 
 unalias(DictName, X) ->
     case get(DictName) of
         'undefined' -> X;  % there is no dictionary and aliases
-        Dict -> unalias_1(DictName, Dict, X)
-    end.
-
-
-unalias_1(_DictName, Dict, X) ->
-    case dict:find(X, Dict) of
-        'error' -> X; % no alias; return the original name
-        {ok, Name} ->
-            ?PRINT("unalias ~w: ~w to ~w~n", [_DictName, X, Name]),
-            % resolved name can also be an alias
-            unalias_1(_DictName, Dict, Name)
+        Dict ->
+            case dict:find(X, Dict) of
+                'error' -> X; % no alias; return the original name
+                {ok, Name} ->
+                    ?PRINT("unalias ~w: ~w to ~w~n", [DictName, X, Name]),
+                    Name
+            end
     end.
 
 
 rewrite(X = {attribute,_LINE,file,{File,_Line}}) ->
     set_file(File), [X];
 
+rewrite(X = {attribute,LINE,record,{Name,_Fields}}) ->
+    add_record_name(Name, LINE),
+    [X];
+
 rewrite({attribute,LINE,record_alias,{Alias, RecordName}})
         when is_atom(RecordName), is_atom(Alias) ->
     add_record_alias(RecordName, Alias, LINE),
     [];
 
+% XXX: prohibit definition of aliases in .hrl files?
 rewrite({attribute,LINE,record_alias,X}) ->
     %Es = lists:flatten(io_lib:format(
     %      "invalid 'record_alias' specification ~w at line ~w", [X, LINE])),
