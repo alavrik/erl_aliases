@@ -1,7 +1,65 @@
-Erl_aliases is an Erlang syntax extension for shortening record and module
-names.
+Overview
+========
 
-This software is a work in progress and is not ready to be used yet.
+Erl_aliases is an Erlang parse transformation that provides the ability to
+define aliases for existing record and module names.
 
-Check erl_aliases_tests.erl for some examples.
+Global Erlang record and module names can be fairly long. Long names are usually
+more descriptive and help to maintain name uniqueness across different Erlang
+applications. However, long names can sometimes be cumbersome to use inside
+application code.
+
+Erl_aliases provides a simple and straightforward interface for defining shorter
+aliases for long record and module names. Defined aliases can then be used
+instead of the original names.
+
+
+Description
+===========
+
+Below is an example of Erl_aliases usage.
+
+    % include a header that specifies Erl_aliases parse transformation function
+    -include_lib("erl_aliases.hrl").
+    ...
+
+    -record(long_record_name, {...}).
+    ...
+
+    % define alias 'r' for the previously defined record 'long_record_name':
+    -record_alias({r, long_record_name}).
+    ...
+
+    % define alias 'm' for module 'long_module_name':
+    -module_alias({m, long_module_name}).
+    ...
+
+When such Erlang module is compiled, Erl_aliases transforms the input AST as
+follows.
+
+  - All record and module aliases appearing in valid contexts are renamed back
+    to their original names.
+  - Alias definitions are removed from the input AST.
+
+There are several restrictions.
+
+  - Aliases can only be defined for original record and module names. An alias
+    can not be defined for another alias.
+  - Record aliases are not allowed to mask previously defined record names and
+    vice versa.
+
+
+Installation
+============
+
+    After compiling "erl_aliases.erl", make sure that "erl_aliases.beam" and
+    "erl_aliases.hrl" are reachable via Erlang library path.
+
+
+Limitations
+===========
+
+    Parse transformations do not work in Erlang interactive shell.
+
+    Defined record aliases can not be used inside "-spec" and "-record" forms.
 
