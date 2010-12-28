@@ -2,15 +2,15 @@ Overview
 ========
 
 Erl_aliases is an Erlang parse transformation that provides the ability to
-define aliases for existing record and module names.
+define aliases for record and module names.
 
-Global Erlang record and module names can be fairly long. Long names are usually
-more descriptive and help to maintain name uniqueness across different Erlang
-applications. However, long names can sometimes be cumbersome to use inside
-application code.
+Global Erlang record and module names tend to be relatively long. Long names are
+usually more descriptive and help to keep names unique across different Erlang
+applications. However, long names can sometimes be cumbersome inside application
+code.
 
 Erl_aliases provides a simple and straightforward interface for defining shorter
-aliases for long record and module names. Defined aliases can then be used
+aliases for long record and module names. Once defined, aliases can then be used
 instead of the original names.
 
 
