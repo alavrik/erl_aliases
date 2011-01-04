@@ -230,13 +230,13 @@ expr({record,LINE,Name,L}) ->
     {record,LINE,unalias_record(Name),field_list(L)};
 
 expr({record,LINE,E,Name,L}) ->
-    {record,LINE,E,unalias_record(Name),field_list(L)};
+    {record,LINE,expr(E),unalias_record(Name),field_list(L)};
 
 expr({record_index,LINE,Name,F}) ->
     {record_index,LINE,unalias_record(Name),F};
 
 expr({record_field,LINE,E,Name,F}) ->
-    {record_field,LINE,E,unalias_record(Name),F};
+    {record_field,LINE,expr(E),unalias_record(Name),F};
 
 expr({match,LINE,P_1,P_2}) ->
     {match,LINE,expr(P_1),expr(P_2)};

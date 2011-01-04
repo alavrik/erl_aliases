@@ -42,6 +42,10 @@ r_match(R = #r{a = A}) when R#r.a == a, A == b -> ok;
 r_match(#r{}) -> ok.
 
 
+%c() -> true.
+c(_) -> true.
+
+
 r_test() ->
     R = #r{},
     R#r.a,
@@ -51,6 +55,9 @@ r_test() ->
 
     R1 = R#r{a = 1, b = 2},
     r_match(R1),
+
+    (case c(R#r.a) of true -> R; false -> R1 end)#r.a,
+    _ = (case c(R#r.a) of true -> R; false -> R1 end)#r{},
 
     case R1 of
         #r{a = 1, b = B} when B == c -> ok;
