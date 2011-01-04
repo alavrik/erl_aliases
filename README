@@ -63,3 +63,6 @@ Limitations
 
     Defined record aliases can not be used inside "-spec" and "-record" forms.
 
+    Using aliases with "is_record" and "record_info" built-in functions is not
+    supported but may be added later.
+

@@ -216,16 +216,44 @@ rewrite(X) -> [X].
 
 clause(_C = {clause,LINE,Ps,Gs,B}) ->
     %?PRINT("clause: ~p~n", [_C]),
-    {clause,LINE, expr_list(Ps), expr_list_list(Gs), body(B)}.
+    {clause,LINE, pattern_list(Ps), guard_list(Gs), body(B)}.
 
 
 ?LIST_MAPPER(expr_list, expr).
-?LIST_MAPPER(expr_list_list, expr_list).
+?LIST_MAPPER(pattern_list, pattern). % pattern_sequence
+?LIST_MAPPER(guard_list, guard). % guard sequence
 
 
-body(X) -> expr_list(X).
+%-type context() :: body | pattern | guard.
+
+-define(is_context(Context),
+    (get('__erl_aliases_context__') == Context)).
+
+-define(WITH_CONTEXT(Context, Expr),
+    begin
+        PrevContext = put('__erl_aliases_context__', Context), % set new context
+        Res = Expr, % get the result
+        put('__erl_aliases_context__', PrevContext), % restore previous context
+        Res % return the result
+    end
+).
 
 
+body(X) ->
+    ?WITH_CONTEXT(body, expr_list(X)).
+
+guard(X) ->
+    ?WITH_CONTEXT(guard, expr_list(X)).
+
+
+pattern({match,LINE,P_1,P_2}) ->
+    {match,LINE,pattern(P_1),pattern(P_2)};
+
+pattern(X) ->
+    ?WITH_CONTEXT(pattern, expr(X)).
+
+
+% common function for traversing expressions, patterns and guard elements
 expr({record,LINE,Name,L}) ->
     {record,LINE,unalias_record(Name),field_list(L)};
 
@@ -238,8 +266,8 @@ expr({record_index,LINE,Name,F}) ->
 expr({record_field,LINE,E,Name,F}) ->
     {record_field,LINE,expr(E),unalias_record(Name),F};
 
-expr({match,LINE,P_1,P_2}) ->
-    {match,LINE,expr(P_1),expr(P_2)};
+expr({match,LINE,P,E_0}) ->
+    {match,LINE,pattern(P),expr(E_0)};
 
 expr({tuple,LINE,L}) ->
     {tuple,LINE,expr_list(L)};
@@ -356,10 +384,10 @@ bin({bin_element,LINE,P,Size,TSL}) ->
 ?LIST_MAPPER(gen_list, gen).
 
 gen({generate,LINE,P,E}) ->
-    {generate,LINE,expr(P),expr(E)};
+    {generate,LINE,pattern(P),expr(E)};
 
 gen({b_generate,LINE,P,E}) ->
-    {b_generate,LINE,expr(P),expr(E)};
+    {b_generate,LINE,pattern(P),expr(E)};
 
 gen(X) -> expr(X).
 
