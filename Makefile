@@ -1,9 +1,9 @@
-ERL_SOURCES = erl_aliases.erl erl_aliases_tests.erl
+ERL_SOURCES = erl_parse.erl erl_aliases.erl erl_aliases_tests.erl
 TEST = erl_aliases
 
 ERL = erl
 ERLC = erlc
-EBIN_DIR = .
+EBIN_DIR = $(PWD)
 ERLC_FLAGS = -pa $(EBIN_DIR)
 
 ERL_OBJECTS = $(ERL_SOURCES:%.erl=$(EBIN_DIR)/%.beam)
@@ -19,6 +19,10 @@ erl_aliases_tests.erl: erl_aliases.erl
 
 
 %.beam: %.erl
+	$(ERLC) $(ERLC_FLAGS) -o $(EBIN_DIR) $<
+
+
+%.erl: %.yrl
 	$(ERLC) $(ERLC_FLAGS) -o $(EBIN_DIR) $<
 
 

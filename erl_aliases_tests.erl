@@ -34,6 +34,7 @@
 -module_alias({m, erl_aliases_tests}).
 
 
+
 -export([m_test_helper/0]).
 
 
@@ -46,7 +47,7 @@ r_match(#r{}) -> ok.
 c(_) -> true.
 
 
-r_test() ->
+record_alias_test() ->
     R = #r{},
     R#r.a,
     _ = #r.b,
@@ -120,7 +121,7 @@ r_test() ->
     ok.
 
 
-m_test() ->
+module_alias_test() ->
     m:m_test_helper(),
     F = fun m:m_test_helper/0,
     F(),
@@ -128,4 +129,60 @@ m_test() ->
 
 
 m_test_helper() -> ok.
+
+
+-dict_alias('dict').
+
+
+dict_named_alias_test() ->
+    % creating an empty dictionary
+    _ = #dict{},
+
+    % associating foo with 1
+    D = #dict{foo = 1},
+    1 = D#dict.foo,
+
+    % setting foo to 2
+    D1 = D#dict{foo = D#dict.foo + 1},
+    2 = D1#dict.foo,
+
+    % test accessing undefined argument
+    {'EXIT', {badarg, _}} = (catch D#dict.bar),
+
+    % several elements
+    D2 = D#dict{bar = 1, fum = 10, obj = D},
+    1 = D2#dict.bar,
+    10 = D2#dict.fum,
+
+    1 = D2#dict.obj#dict.foo,
+
+    ok.
+
+
+-dict_alias('').
+
+
+dict_alias_test() ->
+    % creating an empty dictionary
+    _ = #{},
+
+    % associating foo with 1
+    D = #{foo = 1},
+    1 = D.foo,
+
+    % setting foo to 2
+    D1 = D#{foo = D.foo + 1},
+    2 = D1.foo,
+
+    % test accessing undefined argument
+    {'EXIT', {badarg, _}} = (catch D.bar),
+
+    % several elements
+    D2 = D#{bar = 1, fum = 10, obj = D},
+    1 = D2.bar,
+    10 = D2.fum,
+
+    1 = D2.obj.foo,
+
+    ok.
 
