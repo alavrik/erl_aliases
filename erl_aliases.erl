@@ -66,16 +66,6 @@ get_file() ->
     get('__erl_aliases_file__').
 
 
-set_dict_alias(X) ->
-    put('__erl_aliases_dict__', X).
-
-get_dict_alias() ->
-    case get('__erl_aliases_dict__') of
-        'undefined' -> 0; % this value won't match (see below)
-        X -> X
-    end.
-
-
 % check wither a key is present in the dictionary
 is_key(Name, DictName) ->
     case get(DictName) of
@@ -96,35 +86,94 @@ store(Name, Value, DictName) ->
     ok.
 
 
+set_dict_alias(Name, Line) ->
+    case is_record_alias_name(Name) of
+        false -> ok;
+        true ->
+            Es = lists:concat([
+                "dict alias ", Name,
+                " conflicts with a previously defined record alias"]),
+            throw({error, Es, Line})
+    end,
+    case is_record_name(Name) of
+        false -> ok;
+        true ->
+            Es_1 = lists:concat([
+                "dict alias ", Name,
+                " conflicts with a previously defined record"]),
+            throw({error, Es_1, Line})
+    end,
+    case get_dict_alias() of
+        0 -> ok; % undefined
+        _ ->
+            Es_2 = "dict alias has been already defined; "
+                   "only one is allowed per module",
+            throw({error, Es_2, Line})
+    end,
+    put('__erl_aliases_dict__', Name).
+
+get_dict_alias() ->
+    case get('__erl_aliases_dict__') of
+        'undefined' -> 0; % this value won't match (see below)
+        X -> X
+    end.
+
+is_dict_alias(Name) -> get_dict_alias() == Name.
+
+
 is_record_name(Name) ->
     is_key(Name, '__erl_aliases_records__').
 
 add_record_name(Name, Line) ->
     case is_record_alias_name(Name) of
+        false -> ok;
         true ->
             Es = lists:concat([
                 "record ", Name,
                 " conflicts with a previously defined record alias"]),
-            throw({error, Es, Line});
-        false ->
-            % we don't need any value to be associated with a record name at the
-            % moment
-            % XXX: store the location?
-            DictName = '__erl_aliases_records__',
-            store(Name, _Value = 'undefined', DictName)
-    end.
+            throw({error, Es, Line})
+    end,
+    case is_dict_alias(Name) of
+        false -> ok;
+        true ->
+            Es_1 = lists:concat([
+                "record ", Name,
+                " conflicts with a previously defined dict alias"]),
+            throw({error, Es_1, Line})
+    end,
+    % we don't need any value to be associated with a record name at the
+    % moment
+    % XXX: store the location?
+    DictName = '__erl_aliases_records__',
+    store(Name, _Value = 'undefined', DictName).
 
+
+add_record_alias(_Name, '', Line) ->
+    % Explicitly prohibiting use of '' as an alias, because:
+    %   - it conflicts with dict syntax;
+    %   - at the same time, it is not universal -- unlike for dicts, it can't
+    %     be applied only to one record at once (or even per module).
+    Es = "use of '' as alias is prohibited",
+    throw({error, Es, Line});
 
 add_record_alias(Name, Alias, Line) ->
     case is_record_name(Alias) of
+        false -> ok;
         true ->
             Es = lists:concat([
                 "record alias ", Alias,
                 " conflicts with a previously defined record"]),
-            throw({error, Es, Line});
-        false ->
-            add_alias('__erl_record_aliases__', Name, Alias, Line)
-    end.
+            throw({error, Es, Line})
+    end,
+    case is_dict_alias(Alias) of
+        false -> ok;
+        true ->
+            Es_1 = lists:concat([
+                "record alias ", Alias,
+                " conflicts with a previously defined dict alias"]),
+            throw({error, Es_1, Line})
+    end,
+    add_alias('__erl_record_aliases__', Name, Alias, Line).
 
 is_record_alias_name(Name) ->
     is_key(Name, '__erl_record_aliases__').
@@ -154,19 +203,19 @@ add_alias(_DictName, Name, Alias, Line) when Name == Alias ->
 add_alias(DictName, Name, Alias, Line) ->
     ?PRINT("add ~w: ~w for ~w~n", [DictName, Alias, Name]),
     case is_key(Alias, DictName) of
+        false -> ok;
         true ->
             Es = lists:concat(["duplicate alias ", Alias]),
-            throw({error, Es, Line});
-        false ->
-            case is_key(Name, DictName) of
-                true ->
-                    Es_1 = lists:concat([
-                        "alias definition for previously defined alias ", Name]),
-                    throw({error, Es_1, Line});
-                false ->
-                    store(Alias, Name, DictName)
-            end
-    end.
+            throw({error, Es, Line})
+    end,
+    case is_key(Name, DictName) of
+        false -> ok;
+        true ->
+            Es_1 = lists:concat([
+                "alias definition for previously defined alias ", Name]),
+            throw({error, Es_1, Line})
+    end,
+    store(Alias, Name, DictName).
 
 
 unalias(DictName, X) ->
@@ -211,8 +260,8 @@ rewrite({attribute,LINE,module_alias,X}) ->
     Es = ["invalid 'module_alias' specification", X],
     throw({error, Es, LINE});
 
-rewrite({attribute,_LINE,dict_alias,X}) when is_atom(X) ->
-    set_dict_alias(X),
+rewrite({attribute,LINE,dict_alias,X}) when is_atom(X) ->
+    set_dict_alias(X, LINE),
     [];
 
 rewrite({attribute,LINE,dict_alias,X}) ->
@@ -292,12 +341,15 @@ pattern(X, S) ->
 
 
 % make dict:store(K1, V1, dict:store(K2, V2, dict:store(K3, V3, ...)))
-make_dict_store(InitDict, []) -> InitDict;
-make_dict_store(InitDict, [H|T]) ->
+make_dict_store(InitDict, L) ->
+    make_dict_store_1(InitDict, lists:reverse(L)).
+
+make_dict_store_1(InitDict, []) -> InitDict;
+make_dict_store_1(InitDict, [H|T]) ->
     {record_field,LINE,Key,Value} = H,
-    Args = [Key, Value, make_dict_store(InitDict, T)],
+    Args = [Key, Value, make_dict_store_1(InitDict, T)],
     Res = make_call(LINE, 'dict', 'store', Args),
-    %?PRINT("make_dict_store: ~p~n", [Res]),
+    %?PRINT("make_dict_store_1: ~p~n", [Res]),
     Res.
 
 
@@ -319,7 +371,7 @@ expr({record,LINE,Name,L}, S) when ?is_dict_alias(Name), ?is_context(body) ->
 
 expr({record,_LINE,E,Name,L}, S) when ?is_dict_alias(Name), ?is_context(body) ->
     % convert D#dict{...} to dict:store(Key, Value, dict:store(..., D))
-    make_dict_store(_InitDict = E, ?field_list(L));
+    make_dict_store(_InitDict = ?expr(E), ?field_list(L));
 
 expr({record_index,LINE,Name,_F}, S)
         when ?is_dict_alias(Name), ?is_context(body) ->

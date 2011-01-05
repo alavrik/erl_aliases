@@ -11,7 +11,7 @@ ERL_OBJECTS = $(ERL_SOURCES:%.erl=$(EBIN_DIR)/%.beam)
 .PHONY: all test
 
 
-all: $(ERL_OBJECTS) test
+all: $(ERL_OBJECTS) test expand
 
 
 erl_aliases_tests.erl: erl_aliases.erl
@@ -30,6 +30,12 @@ test: $(ERL_OBJECTS)
 	$(ERL) -pa . -I . -noshell -s eunit test erl_aliases -s erlang halt #init stop
 
 
+expand: erl_aliases_tests.P
+
+erl_aliases_tests.P: erl_aliases_tests.erl
+	$(ERL) -pa . -I . -noshell -eval "compile:file(erl_aliases_tests.erl,'P')" -s erlang halt #init stop
+
+
 clean:
-	rm -f $(ERL_OBJECTS) erl_crash.dump
+	rm -f $(ERL_OBJECTS) erl_crash.dump erl_aliases_tests.P
 

@@ -131,8 +131,13 @@ module_alias_test() ->
 m_test_helper() -> ok.
 
 
--dict_alias('dict').
+% Only one of the two functions below will work, because -dict_alias() can be
+% defined only once per module.
+%-define(named_dict,1).
+-ifdef(named_dict).
 
+
+-dict_alias('dict').
 
 dict_named_alias_test() ->
     % creating an empty dictionary
@@ -143,8 +148,9 @@ dict_named_alias_test() ->
     1 = D#dict.foo,
 
     % setting foo to 2
-    D1 = D#dict{foo = D#dict.foo + 1},
+    D1 = D#dict{foo = D#dict.foo + 1}#dict{baz = 100},
     2 = D1#dict.foo,
+    100 = D1#dict.baz,
 
     % test accessing undefined argument
     {'EXIT', {badarg, _}} = (catch D#dict.bar),
@@ -159,8 +165,10 @@ dict_named_alias_test() ->
     ok.
 
 
--dict_alias('').
+-else.
 
+
+-dict_alias('').
 
 dict_alias_test() ->
     % creating an empty dictionary
@@ -170,11 +178,12 @@ dict_alias_test() ->
     D = #{foo = 1},
     1 = D.foo,
 
-    % setting foo to 2
-    D1 = D#{foo = D.foo + 1},
+    % setting foo to foo + 1 and baz to 100
+    D1 = D#{foo = D.foo + 1}#{baz = 100},
     2 = D1.foo,
+    100 = D1.baz,
 
-    % test accessing undefined argument
+    % accessing undefined field
     {'EXIT', {badarg, _}} = (catch D.bar),
 
     % several elements
@@ -182,7 +191,9 @@ dict_alias_test() ->
     1 = D2.bar,
     10 = D2.fum,
 
+    % accessing field of a dict included in another dict
     1 = D2.obj.foo,
-
     ok.
 
+
+-endif.
