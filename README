@@ -1,45 +1,146 @@
 Overview
 ========
 
-Erl_aliases is an Erlang parse transformation that provides the ability to
-define aliases for record and module names.
+Erl_aliases is an Erlang parse transformation that provides a simple and
+straightforward interface for defining (shorter) aliases for (longer) record and
+module names. Once defined, aliases can be used instead of the original names.
 
-Global Erlang record and module names tend to be relatively long. Long names are
-usually more descriptive and help to keep names unique across different Erlang
-applications. However, long names can sometimes be cumbersome inside application
-code.
-
-Erl_aliases provides a simple and straightforward interface for defining shorter
-aliases for long record and module names. Once defined, aliases can then be used
-instead of the original names.
+In addition to that, Erl_aliases provides a record-like syntax for operations
+with Erlang dynamic dictionaries (stdlib's "dict" module) that are indexed by
+atom keys.
 
 
-Description
-===========
+Rationale
+=========
 
-Below is an example of Erl_aliases usage.
+1. Record and module aliases
 
-    % include a header that specifies Erl_aliases parse transformation function
-    -include_lib("erl_aliases.hrl").
-    ...
+    Global Erlang record and module names tend to be relatively long. Long names
+    are usually more descriptive and help to keep names unique across different
+    Erlang applications. However, long names can sometimes be cumbersome inside
+    application code.
 
-    -record(long_record_name, {...}).
-    ...
+    For instance, it can be fairly annoying to type a long record name every
+    time just to access a field. But more importantly, long record and module
+    names make code less readable.
 
-    % define alias 'r' for the previously defined record 'long_record_name':
-    -record_alias({r, long_record_name}).
-    ...
 
-    % define alias 'm' for module 'long_module_name':
-    -module_alias({m, long_module_name}).
-    ...
+2. Record-like syntax for dictionaries
 
-When such Erlang module is compiled, Erl_aliases transforms the input AST as
-follows.
+    Unlike many other languages, Erlang doesn't have a built-in syntax for
+    working with dynamic dictionaries. Erl_aliases brings this feature to
+    Erlang. For example, now, instead of writing:
+
+        X = dict:store(bar, "abc", dict:store(foo, 1, dict:new())),
+        dict:fetch(foo, X).
+
+    , one can simply write:
+
+        X = #{foo = 1, bar = "abc"},
+        X.foo.
+
+    (See more examples below).
+
+
+Usage examples
+==============
+
+1. Record and module aliases
+
+        % include a header that specifies Erl_aliases parse transformation function
+        -include_lib("erl_aliases.hrl").
+        ...
+
+        -record(long_record_name, {...}). % an Erlang record definition
+        ...
+
+        % define alias 'r' for the previously defined record 'long_record_name':
+        -record_alias({r, long_record_name}).
+        ...
+
+        % define alias 'm' for module 'long_module_name':
+        -module_alias({m, long_module_name}).
+        ...
+
+    Now, 'r’ can be used instead of 'long_record_name’ in operations with
+    records, and 'm’ instead of 'long_module_name’ in module context.
+
+
+2. Record-like syntax for dictionaries
+
+    This feature comes in two flavors. The first one make operations with
+    dictionaries look exactly as operations with some Erlang record:
+
+        -include_lib("erl_aliases.hrl").
+
+        % declare a special record name to be used for dictionaries
+        -dict_alias('dict').
+        ...
+
+        % creating an empty dictionary
+        X = #dict{},
+
+        % associating foo with 1
+        D = #dict{foo = 1},
+        1 = D#dict.foo,
+
+        % setting foo to 2
+        D1 = D#dict{foo = D#dict.foo + 1}#dict{baz = 100},
+
+        % several elements:
+        D2 = D#dict{bar = 1, fum = 10, obj = D},
+
+        1 = D2#dict.obj#dict.foo,
+
+        % test accessing undefined argument
+        {'EXIT', {badarg, _}} = (catch D#dict.bar)
+
+
+    The second flavor uses a slightly different and lighter syntax. It still
+    looks like operations with an Erlang record but without specifying the
+    record's name.
+
+        -include_lib("erl_aliases.hrl").
+
+        -dict_alias('').
+        ...
+
+        % creating an empty dictionary
+        X = #{},
+
+        % associating foo with 1
+        D = #{foo = 1},
+        1 = D.foo,
+
+        % setting foo to foo + 1 and baz to 100
+        D1 = D#{foo = D.foo + 1}#{baz = 100},
+
+        % several elements
+        D2 = D#{bar = 1, fum = 10, obj = D},
+
+        % accessing field of a dict included in another dict
+        1 = D2.obj.foo
+
+        % accessing undefined field
+        {'EXIT', {badarg, _}} = (catch D.bar)
+
+
+    Note that the second flavor relies on a slightly modified Erlang parser.
+    The modification is a one-line non-conflicting backward-compatible Erlang
+    grammar change enabling "X.foo" syntax for element access.
+
+
+Details
+=======
+
+When an Erlang module that uses Erl_aliases is compiled, its input AST is
+automatically gets transformed as follows.
 
   - All record and module aliases appearing in valid contexts are renamed back
     to their original names.
   - Alias definitions are removed from the input AST.
+  - Record-like operations with dictionaries are transformed to corresponding
+    actions that use the stdlib's "dict" module.
 
 There are several restrictions.
 
@@ -47,13 +148,11 @@ There are several restrictions.
     can not be defined for another alias.
   - Record aliases are not allowed to mask previously defined record names and
     vice versa.
+  - Dictionary alias is not allowed to mask record names, record aliases and
+    vice versa.
 
-
-Installation
-============
-
-    After compiling "erl_aliases.erl", make sure that "erl_aliases.beam" and
-    "erl_aliases.hrl" are reachable via Erlang library path.
+If any of the above restrictions is violated, compilation will fail and an error
+message will be printed.
 
 
 Limitations
@@ -65,4 +164,21 @@ Limitations
 
     Using aliases with "is_record" and "record_info" built-in functions is not
     supported but may be added later.
+
+    Record-like syntax for dictionaries don't work in pattern matching context.
+    It only works for constructing dictionaries and accessing their elements
+    using atom keys.
+
+
+Authors
+=======
+
+    Erl_aliases is written by Anton Lavrik <alavrik@piqi.org>
+
+
+License
+=======
+
+    Erl_aliases is distributed under the terms of a MIT license. See LICENSE
+    file for details.
 

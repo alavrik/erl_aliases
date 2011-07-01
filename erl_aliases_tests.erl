@@ -1,4 +1,4 @@
-%%  Copyright (c) 2010 Anton Lavrik, http://github.com/alavrik
+%%  Copyright (c) 2010, 2011 Anton Lavrik, http://github.com/alavrik
 %%  
 %%  Permission is hereby granted, free of charge, to any person obtaining
 %%  a copy of this software and associated documentation files (the
@@ -194,6 +194,14 @@ dict_alias_test() ->
     % accessing field of a dict included in another dict
     1 = D2.obj.foo,
     ok.
+
+
+dict_alias_grammar_test() ->
+    dict_grammar(#{foo = 1}),
+    foo().
+
+
+dict_grammar(D) -> D.foo, D. foo() -> ok.
 
 
 -endif.
