@@ -11,14 +11,15 @@ ERL_OBJECTS = $(ERL_SOURCES:%.erl=$(EBIN_DIR)/%.beam)
 .PHONY: all test
 
 
-all: $(ERL_OBJECTS) test expand
+all: $(ERL_SOURCES) $(ERL_OBJECTS) test expand
 
 
 erl_aliases_tests.erl: erl_aliases.erl
-	touch -r $< $@
+	#touch -r $< $@
+	cp ../test/$@ $@
 
 
-%.beam: %.erl
+$(ERL_OBJECTS): %.beam: %.erl
 	$(ERLC) $(ERLC_FLAGS) -o $(EBIN_DIR) $<
 
 
@@ -37,5 +38,5 @@ erl_aliases_tests.P: erl_aliases_tests.erl
 
 
 clean:
-	rm -f $(ERL_OBJECTS) erl_crash.dump erl_aliases_tests.P
+	rm -f $(ERL_OBJECTS) erl_crash.dump erl_parse.erl erl_aliases_tests.erl erl_aliases_tests.P
 

@@ -1,0 +1,6 @@
+{application, erl_aliases,
+ [{description, "Aliases for Erlang record and module names & record-like syntax for dictionaries"},
+  {vsn, git},
+  {modules, []},
+  {applications, [kernel, stdlib]},
+  {env, []}]}.

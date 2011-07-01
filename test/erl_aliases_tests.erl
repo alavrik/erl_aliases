@@ -22,7 +22,7 @@
 -module(erl_aliases_tests).
 
 %-compile(export_all).
--include_lib("erl_aliases.hrl").
+-include("../include/erl_aliases.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 
