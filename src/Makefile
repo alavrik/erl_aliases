@@ -1,4 +1,4 @@
-ERL_SOURCES = erl_parse.erl erl_aliases.erl erl_aliases_tests.erl
+ERL_SOURCES = erl_aliases.erl erl_aliases_tests.erl
 TEST = erl_aliases
 
 ERL = erl

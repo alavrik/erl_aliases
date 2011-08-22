@@ -86,41 +86,6 @@ store(Name, Value, DictName) ->
     ok.
 
 
-set_dict_alias(Name, Line) ->
-    case is_record_alias_name(Name) of
-        false -> ok;
-        true ->
-            Es = lists:concat([
-                "dict alias ", Name,
-                " conflicts with a previously defined record alias"]),
-            throw({error, Es, Line})
-    end,
-    case is_record_name(Name) of
-        false -> ok;
-        true ->
-            Es_1 = lists:concat([
-                "dict alias ", Name,
-                " conflicts with a previously defined record"]),
-            throw({error, Es_1, Line})
-    end,
-    case get_dict_alias() of
-        0 -> ok; % undefined
-        _ ->
-            Es_2 = "dict alias has been already defined; "
-                   "only one is allowed per module",
-            throw({error, Es_2, Line})
-    end,
-    put('__erl_aliases_dict__', Name).
-
-get_dict_alias() ->
-    case get('__erl_aliases_dict__') of
-        'undefined' -> 0; % this value won't match (see below)
-        X -> X
-    end.
-
-is_dict_alias(Name) -> get_dict_alias() == Name.
-
-
 is_record_name(Name) ->
     is_key(Name, '__erl_aliases_records__').
 
@@ -132,14 +97,6 @@ add_record_name(Name, Line) ->
                 "record ", Name,
                 " conflicts with a previously defined record alias"]),
             throw({error, Es, Line})
-    end,
-    case is_dict_alias(Name) of
-        false -> ok;
-        true ->
-            Es_1 = lists:concat([
-                "record ", Name,
-                " conflicts with a previously defined dict alias"]),
-            throw({error, Es_1, Line})
     end,
     % we don't need any value to be associated with a record name at the
     % moment
@@ -164,14 +121,6 @@ add_record_alias(Name, Alias, Line) ->
                 "record alias ", Alias,
                 " conflicts with a previously defined record"]),
             throw({error, Es, Line})
-    end,
-    case is_dict_alias(Alias) of
-        false -> ok;
-        true ->
-            Es_1 = lists:concat([
-                "record alias ", Alias,
-                " conflicts with a previously defined dict alias"]),
-            throw({error, Es_1, Line})
     end,
     add_alias('__erl_record_aliases__', Name, Alias, Line).
 
@@ -260,14 +209,6 @@ rewrite({attribute,LINE,module_alias,X}) ->
     Es = ["invalid 'module_alias' specification", X],
     throw({error, Es, LINE});
 
-rewrite({attribute,LINE,dict_alias,X}) when is_atom(X) ->
-    set_dict_alias(X, LINE),
-    [];
-
-rewrite({attribute,LINE,dict_alias,X}) ->
-    Es = ["invalid 'dict_alias' specification", X],
-    throw({error, Es, LINE});
-
 rewrite({function,LINE,Name,Arity,L}) ->
     X = {function,LINE,Name,Arity, clause_list(L, init_state())},
     [X];
@@ -282,15 +223,13 @@ rewrite(X) -> [X].
 -type context() :: body | pattern | guard.
 
 -record(state, {
-    context :: context(),
-    dict_alias :: atom() % special handling of 'dict' records is enabled
+    context :: context()
 }).
 
 
 init_state() ->
     #state{
-        context = 'undefined',
-        dict_alias = get_dict_alias()
+        context = 'undefined'
     }.
 
 
@@ -318,7 +257,6 @@ init_state() ->
 
 
 -define(is_context(Context), S#state.context == Context).
--define(is_dict_alias(Name), S#state.dict_alias == Name).
 
 
 clause(_C = {clause,LINE,Ps,Gs,B}, S) ->
@@ -340,63 +278,8 @@ pattern(X, S) ->
     expr(X, S#state{context = pattern}).
 
 
-% make dict:store(K1, V1, dict:store(K2, V2, dict:store(K3, V3, ...)))
-make_dict_store(InitDict, L) ->
-    make_dict_store_1(InitDict, lists:reverse(L)).
-
-make_dict_store_1(InitDict, []) -> InitDict;
-make_dict_store_1(InitDict, [H|T]) ->
-    {record_field,LINE,Key,Value} = H,
-    Args = [Key, Value, make_dict_store_1(InitDict, T)],
-    Res = make_call(LINE, 'dict', 'store', Args),
-    %?PRINT("make_dict_store_1: ~p~n", [Res]),
-    Res.
-
-
-make_call(LINE, ModName, FunName, Args) ->
-    Mod = {'atom',LINE,ModName},
-    Fun = {'atom',LINE,FunName},
-    Res = {call, LINE, {remote,LINE,Mod,Fun}, Args},
-    %?PRINT("make_call: ~p~n", [Res]),
-    Res.
-
-
 %
 % common function for traversing expressions, patterns and guard elements
-%
-expr({record,LINE,Name,L}, S) when ?is_dict_alias(Name), ?is_context(body) ->
-    % convert #dict{...} to dict:store(Key, Value, dict:store(...))
-    InitDict = make_call(LINE, 'dict', 'new', []),
-    make_dict_store(InitDict, ?field_list(L));
-
-expr({record,_LINE,E,Name,L}, S) when ?is_dict_alias(Name), ?is_context(body) ->
-    % convert D#dict{...} to dict:store(Key, Value, dict:store(..., D))
-    make_dict_store(_InitDict = ?expr(E), ?field_list(L));
-
-expr({record_index,LINE,Name,_F}, S)
-        when ?is_dict_alias(Name), ?is_context(body) ->
-    Es = "field indexes can not be used with dict_alias",
-    throw({error, Es, LINE});
-
-expr({record_field,LINE,E,Name,F}, S)
-        when ?is_dict_alias(Name), ?is_context(body) ->
-    % convert X#dict.foo to dict:fetch(foo, X)
-    make_call(LINE, 'dict', 'fetch', [F, ?expr(E)]);
-
-% NOTE: highly experimental: reusing Mensia field access syntax for accessing
-% dict members
-% Original use: If E is E_0.Field, a Mnesia record access inside a query.
-expr({record_field,LINE,E,F}, S)
-        when S#state.dict_alias == '', ?is_context(body),
-             not (is_tuple(E) % prohibit using ".foo" without leading expression
-                  andalso element(1, E) == 'atom'
-                  andalso element(3, E) == '') ->
-    % convert X.foo to dict:fetch(foo, X)
-    %?PRINT("record_field: ~p~n", [E]),
-    make_call(LINE, 'dict', 'fetch', [F, ?expr(E)]);
-
-%
-% end of special handling of 'dict' records
 %
 expr({record,LINE,Name,L}, S) ->
     {record,LINE,unalias_record(Name),?field_list(L)};
