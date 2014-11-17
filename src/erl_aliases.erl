@@ -134,14 +134,16 @@ unalias_record(Name) ->
 add_module_alias(Name, Alias, Line) ->
     add_alias('__erl_module_aliases__', Name, Alias, Line).
 
-unalias_module(Name) ->
-    unalias('__erl_module_aliases__', Name).
 
+% NOTE: module names are represented as plain atoms before R15
+unalias_module(Name) when is_atom(Name) ->
+    unalias('__erl_module_aliases__', Name);
 
-unalias_module_atom({'atom', LINE, Name}) ->
+unalias_module({'atom', LINE, Name}) ->
     Name1 = unalias_module(Name),
     {'atom', LINE, Name1};
-unalias_module_atom(X) -> X.
+
+unalias_module(X) -> X.
 
 
 % add record or module alias entry to the correspondent dictionary
@@ -242,6 +244,7 @@ init_state() ->
 ?LIST_MAPPER(pattern_list, pattern). % pattern_sequence
 ?LIST_MAPPER(guard_list, guard). % guard sequence
 ?LIST_MAPPER(field_list, field).
+?LIST_MAPPER(map_field_list, map_field).
 ?LIST_MAPPER(bin_list, bin).
 ?LIST_MAPPER(gen_list, gen).
 
@@ -252,6 +255,7 @@ init_state() ->
 -define(expr_list(X), expr_list(X, S)).
 -define(clause_list(X), clause_list(X, S)).
 -define(field_list(X), field_list(X, S)).
+-define(map_field_list(X), map_field_list(X, S)).
 -define(gen_list(X), gen_list(X, S)).
 -define(bin_list(X), bin_list(X, S)).
 
@@ -311,11 +315,17 @@ expr({op,LINE,Op,P_1,P_2}, S) ->
 expr({op,LINE,Op,P}, S) ->
     {op,LINE,Op,?expr(P)};
 
+expr({map,LINE,L}, S) ->
+    {map,LINE,?map_field_list(L)};
+
+expr({map,LINE,E,L}, S) ->
+    {map,LINE,?expr(E),?map_field_list(L)};
+
 expr({'catch',LINE,E}, S) ->
     {'catch',LINE,?expr(E)};
 
 expr({call, LINE, {remote,LINE_1,M,F}, L}, S) ->
-    M1 = unalias_module_atom(M),
+    M1 = unalias_module(M),
     {call, LINE, {remote,LINE_1,?expr(M1),?expr(F)}, ?expr_list(L)};
 
 expr({call,LINE,F,L}, S) ->
@@ -358,11 +368,14 @@ expr({'receive',LINE,L}, S) ->
 
 expr(X = {'fun',_LINE,{function,_Name,_Arity}}, _S) ->
     X;
-expr({'fun',LINE,{function,Module,Name,Arity}}, _S) ->
-    {'fun',LINE,{function,unalias_module(Module),Name,Arity}};
+expr({'fun',LINE,{function,Module,Name,Arity}}, S) ->
+    {'fun',LINE,{function,unalias_module(?expr(Module)),?expr(Name),?expr(Arity)}};
 
 expr({'fun',LINE,{clauses,L}}, S) ->
     {'fun',LINE,{clauses,?clause_list(L)}};
+
+expr({named_fun,LINE,Name,L}, S) ->
+    {named_fun,LINE,Name,?clause_list(L)};
 
 % If E is E_0.Field, a Mnesia record access inside a query
 expr({record_field,LINE,E_0,Field}, S) ->
@@ -392,6 +405,13 @@ expr(X, _S) ->
 
 field({record_field,LINE,F,E}, S) ->
     {record_field,LINE,F,?expr(E)}.
+
+
+map_field({map_field_assoc,LINE,K,V}, S) ->
+    {map_field_assoc,LINE,?expr(K),?expr(V)};
+
+map_field({map_field_exact,LINE,K,V}, S) ->
+    {map_field_exact,LINE,?expr(K),?expr(V)}.
 
 
 bin({bin_element,LINE,P,Size,TSL}, S) ->

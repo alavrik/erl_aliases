@@ -34,7 +34,7 @@ test: $(ERL_OBJECTS)
 expand: erl_aliases_tests.P
 
 erl_aliases_tests.P: erl_aliases_tests.erl
-	$(ERL) -pa . -I . -noshell -eval "compile:file(erl_aliases_tests.erl,'P')" -s erlang halt #init stop
+	$(ERL) -pa . -I . -noshell -eval "compile:file(\"erl_aliases_tests.erl\",'P')" -s erlang halt #init stop
 
 
 clean:
